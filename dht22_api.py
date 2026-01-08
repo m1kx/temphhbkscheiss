@@ -7,7 +7,7 @@ Reads temperature from DHT22 sensor on GPIO pin 15 and serves via REST API.
 import time
 import board
 import adafruit_dht
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 
 # Initialize the DHT22 sensor on GPIO pin 15
 # Note: board.D15 corresponds to GPIO 15 on Raspberry Pi
@@ -59,11 +59,18 @@ def read_sensor():
 
 @app.route("/")
 def index():
-    """Root endpoint with API info."""
+    """Serve the dashboard."""
+    return render_template("dashboard.html")
+
+
+@app.route("/api")
+def api_info():
+    """API info endpoint."""
     return jsonify({
         "name": "DHT22 Temperature API",
         "endpoints": {
-            "/": "This help message",
+            "/": "Dashboard UI",
+            "/api": "This help message",
             "/temperature": "Get current temperature reading",
             "/humidity": "Get current humidity reading",
             "/reading": "Get full sensor reading (temperature + humidity)",
@@ -120,9 +127,10 @@ def health_check():
 if __name__ == "__main__":
     print("Starting DHT22 Temperature API Server...")
     print("DHT22 sensor configured on GPIO pin 15")
-    print("API will be available at http://<raspberry-pi-ip>:5000")
+    print("Dashboard available at http://<raspberry-pi-ip>:5000")
     print("\nEndpoints:")
-    print("  GET /            - API info")
+    print("  GET /            - Dashboard UI")
+    print("  GET /api         - API info")
     print("  GET /temperature - Temperature reading")
     print("  GET /humidity    - Humidity reading")
     print("  GET /reading     - Full sensor reading")
