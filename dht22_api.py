@@ -54,8 +54,7 @@ def _camera_capture_loop():
     """Capture frames, overlay detections, encode to JPEG."""
     global _latest_frame, _raw_frame
     while True:
-        frame_rgb = camera.capture_array()
-        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        frame_bgr = camera.capture_array()
         _raw_frame = frame_bgr
 
         dets = _latest_detections
