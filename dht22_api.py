@@ -16,7 +16,7 @@ from picamera2 import Picamera2
 
 # Initialize the DHT22 sensor on GPIO pin 15
 # Note: board.D15 corresponds to GPIO 15 on Raspberry Pi
-dht_device = adafruit_dht.DHT22(board.D15)
+dht_device = adafruit_dht.DHT22(board.D17)
 
 app = Flask(__name__)
 
