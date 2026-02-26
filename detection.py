@@ -51,9 +51,31 @@ def _download(url, dest):
 class FaceDetector:
     """Haar-cascade frontal-face detector (ships with OpenCV)."""
 
+    _CASCADE_SEARCH_PATHS = [
+        "/usr/share/opencv4/haarcascades/",
+        "/usr/share/opencv/haarcascades/",
+        "/usr/share/OpenCV/haarcascades/",
+        "/usr/local/share/opencv4/haarcascades/",
+    ]
+
     def __init__(self):
-        path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        cascade_file = "haarcascade_frontalface_default.xml"
+
+        if hasattr(cv2, "data") and hasattr(cv2.data, "haarcascades"):
+            path = cv2.data.haarcascades + cascade_file
+        else:
+            path = cascade_file
+            for d in self._CASCADE_SEARCH_PATHS:
+                candidate = os.path.join(d, cascade_file)
+                if os.path.isfile(candidate):
+                    path = candidate
+                    break
+
         self._cascade = cv2.CascadeClassifier(path)
+        if self._cascade.empty():
+            raise FileNotFoundError(
+                f"Haar cascade not found. Tried cv2.data and {self._CASCADE_SEARCH_PATHS}"
+            )
 
     def detect(self, frame_bgr):
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
