@@ -48,34 +48,46 @@ def _download(url, dest):
     print(f"  Done: {os.path.basename(dest)}")
 
 
-class FaceDetector:
-    """Haar-cascade frontal-face detector (ships with OpenCV)."""
+_HAAR_CASCADE_URL = (
+    "https://raw.githubusercontent.com/opencv/opencv/4.x/data/haarcascades/"
+    "haarcascade_frontalface_default.xml"
+)
 
-    _CASCADE_SEARCH_PATHS = [
-        "/usr/share/opencv4/haarcascades/",
-        "/usr/share/opencv/haarcascades/",
-        "/usr/share/OpenCV/haarcascades/",
-        "/usr/local/share/opencv4/haarcascades/",
-    ]
+_CASCADE_SEARCH_PATHS = [
+    "/usr/share/opencv4/haarcascades/",
+    "/usr/share/opencv/haarcascades/",
+    "/usr/share/OpenCV/haarcascades/",
+    "/usr/local/share/opencv4/haarcascades/",
+]
+
+
+def _find_or_download_cascade():
+    """Locate the Haar cascade XML, downloading it if necessary."""
+    name = "haarcascade_frontalface_default.xml"
+
+    if hasattr(cv2, "data") and hasattr(cv2.data, "haarcascades"):
+        builtin = cv2.data.haarcascades + name
+        if os.path.isfile(builtin):
+            return builtin
+
+    for d in _CASCADE_SEARCH_PATHS:
+        candidate = os.path.join(d, name)
+        if os.path.isfile(candidate):
+            return candidate
+
+    local = os.path.join(MODELS_DIR, name)
+    _download(_HAAR_CASCADE_URL, local)
+    return local
+
+
+class FaceDetector:
+    """Haar-cascade frontal-face detector."""
 
     def __init__(self):
-        cascade_file = "haarcascade_frontalface_default.xml"
-
-        if hasattr(cv2, "data") and hasattr(cv2.data, "haarcascades"):
-            path = cv2.data.haarcascades + cascade_file
-        else:
-            path = cascade_file
-            for d in self._CASCADE_SEARCH_PATHS:
-                candidate = os.path.join(d, cascade_file)
-                if os.path.isfile(candidate):
-                    path = candidate
-                    break
-
+        path = _find_or_download_cascade()
         self._cascade = cv2.CascadeClassifier(path)
         if self._cascade.empty():
-            raise FileNotFoundError(
-                f"Haar cascade not found. Tried cv2.data and {self._CASCADE_SEARCH_PATHS}"
-            )
+            raise FileNotFoundError(f"Failed to load Haar cascade from {path}")
 
     def detect(self, frame_bgr):
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
