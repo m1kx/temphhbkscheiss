@@ -105,6 +105,146 @@
             font-weight: 300;
         }
 
+        .stream-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 28px;
+            margin-bottom: 24px;
+            position: relative;
+            overflow: hidden;
+            animation: fadeInUp 0.6s ease-out 0.05s backwards;
+        }
+
+        .stream-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            border-radius: 20px 20px 0 0;
+            background: linear-gradient(90deg, var(--accent-temp), var(--accent-humid));
+        }
+
+        .stream-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .stream-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .stream-label .icon {
+            font-size: 1.2rem;
+            color: var(--accent-humid);
+        }
+
+        .stream-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
+
+        .stream-badge-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f87171;
+            animation: pulse 1.5s infinite;
+        }
+
+        .stream-container {
+            position: relative;
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            aspect-ratio: 16 / 9;
+        }
+
+        .stream-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .stream-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(10, 14, 20, 0.7);
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .stream-overlay.hidden {
+            opacity: 0;
+        }
+
+        .stream-overlay-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .stream-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .stream-btn {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stream-btn:hover {
+            background: var(--bg-card-hover);
+            color: var(--text-primary);
+            border-color: var(--text-secondary);
+        }
+
+        .stream-btn:active {
+            transform: scale(0.97);
+        }
+
+        .stream-btn.active {
+            background: rgba(74, 224, 255, 0.1);
+            border-color: var(--accent-humid);
+            color: var(--accent-humid);
+        }
+
         .cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -361,6 +501,37 @@
             <p class="subtitle">Real-time temperature & humidity monitoring</p>
         </header>
 
+        <div class="stream-card">
+            <div class="stream-header">
+                <div class="stream-label">
+                    <span class="icon">📷</span>
+                    Live Camera
+                </div>
+                <div class="stream-badge" id="stream-badge" style="display: none;">
+                    <div class="stream-badge-dot"></div>
+                    LIVE
+                </div>
+            </div>
+            <div class="stream-container">
+                <img id="stream-img" alt="Camera stream">
+                <div class="stream-overlay" id="stream-overlay">
+                    <span class="stream-overlay-text">Stream paused</span>
+                </div>
+            </div>
+            <div class="stream-controls">
+                <button class="stream-btn" id="stream-toggle" onclick="toggleStream()">
+                    <span id="stream-toggle-icon">▶</span>
+                    <span id="stream-toggle-text">Start stream</span>
+                </button>
+                <button class="stream-btn" onclick="takeSnapshot()">
+                    📸 Snapshot
+                </button>
+                <a class="stream-btn" id="stream-fullscreen" href="/video_feed" target="_blank">
+                    ⛶ Fullscreen
+                </a>
+            </div>
+        </div>
+
         <div class="cards">
             <div class="card temp">
                 <div class="card-label">
@@ -459,13 +630,59 @@
         // Auto-refresh every 10 seconds
         autoRefreshInterval = setInterval(fetchData, 10000);
 
+        // --- Camera stream controls ---
+        const streamImg = document.getElementById('stream-img');
+        const streamOverlay = document.getElementById('stream-overlay');
+        const streamBadge = document.getElementById('stream-badge');
+        const streamToggleIcon = document.getElementById('stream-toggle-icon');
+        const streamToggleText = document.getElementById('stream-toggle-text');
+        const streamToggleBtn = document.getElementById('stream-toggle');
+        let streamActive = false;
+
+        function toggleStream() {
+            if (streamActive) {
+                stopStream();
+            } else {
+                startStream();
+            }
+        }
+
+        function startStream() {
+            streamImg.src = '/video_feed?' + Date.now();
+            streamActive = true;
+            streamOverlay.classList.add('hidden');
+            streamBadge.style.display = 'flex';
+            streamToggleIcon.textContent = '⏸';
+            streamToggleText.textContent = 'Pause stream';
+            streamToggleBtn.classList.add('active');
+        }
+
+        function stopStream() {
+            streamImg.src = '';
+            streamActive = false;
+            streamOverlay.classList.remove('hidden');
+            streamBadge.style.display = 'none';
+            streamToggleIcon.textContent = '▶';
+            streamToggleText.textContent = 'Start stream';
+            streamToggleBtn.classList.remove('active');
+        }
+
+        function takeSnapshot() {
+            window.open('/snapshot?' + Date.now(), '_blank');
+        }
+
+        // Auto-start the stream
+        startStream();
+
         // Visibility API - pause refresh when tab is hidden
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 clearInterval(autoRefreshInterval);
+                if (streamActive) stopStream();
             } else {
                 fetchData();
                 autoRefreshInterval = setInterval(fetchData, 10000);
+                startStream();
             }
         });
     </script>

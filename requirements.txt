@@ -1,4 +1,5 @@
 Flask==3.0.0
 adafruit-circuitpython-dht==4.0.4
 RPi.GPIO==0.7.1
+picamera2==0.3.22
 

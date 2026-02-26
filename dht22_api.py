@@ -2,18 +2,65 @@
 """
 DHT22 Temperature Sensor REST API for Raspberry Pi 4
 Reads temperature from DHT22 sensor on GPIO pin 15 and serves via REST API.
+Streams video from a connected Raspberry Pi camera via MJPEG.
 """
 
+import io
 import time
+import threading
+
 import board
 import adafruit_dht
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, Response
+from picamera2 import Picamera2
 
 # Initialize the DHT22 sensor on GPIO pin 15
 # Note: board.D15 corresponds to GPIO 15 on Raspberry Pi
 dht_device = adafruit_dht.DHT22(board.D15)
 
 app = Flask(__name__)
+
+# --- Camera streaming setup ---
+
+camera = Picamera2()
+camera_config = camera.create_video_configuration(main={"size": (1280, 720), "format": "RGB888"})
+camera.configure(camera_config)
+camera.start()
+
+_frame_lock = threading.Lock()
+_latest_frame = None
+
+
+def _camera_capture_loop():
+    """Continuously capture JPEG frames in a background thread."""
+    global _latest_frame
+    stream = io.BytesIO()
+    while True:
+        stream.seek(0)
+        stream.truncate()
+        camera.capture_file(stream, format="jpeg")
+        with _frame_lock:
+            _latest_frame = stream.getvalue()
+        time.sleep(0.05)  # ~20 fps cap
+
+
+_capture_thread = threading.Thread(target=_camera_capture_loop, daemon=True)
+_capture_thread.start()
+
+
+def _generate_mjpeg():
+    """Yield MJPEG frames for the video stream response."""
+    while True:
+        with _frame_lock:
+            frame = _latest_frame
+        if frame is None:
+            time.sleep(0.1)
+            continue
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+        )
+        time.sleep(0.05)
 
 
 def read_sensor():
@@ -74,6 +121,8 @@ def api_info():
             "/temperature": "Get current temperature reading",
             "/humidity": "Get current humidity reading",
             "/reading": "Get full sensor reading (temperature + humidity)",
+            "/video_feed": "MJPEG video livestream from Pi camera",
+            "/snapshot": "Single JPEG snapshot from Pi camera",
             "/health": "API health check"
         }
     })
@@ -115,6 +164,25 @@ def get_full_reading():
     return jsonify(data), 500
 
 
+@app.route("/video_feed")
+def video_feed():
+    """MJPEG video stream from the Raspberry Pi camera."""
+    return Response(
+        _generate_mjpeg(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+@app.route("/snapshot")
+def snapshot():
+    """Single JPEG snapshot from the camera."""
+    with _frame_lock:
+        frame = _latest_frame
+    if frame is None:
+        return jsonify({"error": "Camera not ready"}), 503
+    return Response(frame, mimetype="image/jpeg")
+
+
 @app.route("/health")
 def health_check():
     """Health check endpoint."""
@@ -127,6 +195,7 @@ def health_check():
 if __name__ == "__main__":
     print("Starting DHT22 Temperature API Server...")
     print("DHT22 sensor configured on GPIO pin 15")
+    print("Pi Camera streaming enabled (1280x720)")
     print("Dashboard available at http://<raspberry-pi-ip>:5000")
     print("\nEndpoints:")
     print("  GET /            - Dashboard UI")
@@ -134,12 +203,14 @@ if __name__ == "__main__":
     print("  GET /temperature - Temperature reading")
     print("  GET /humidity    - Humidity reading")
     print("  GET /reading     - Full sensor reading")
+    print("  GET /video_feed  - MJPEG video livestream")
+    print("  GET /snapshot    - Camera snapshot (JPEG)")
     print("  GET /health      - Health check")
     print("\nPress Ctrl+C to stop the server\n")
     
     try:
-        # Run on all interfaces so it's accessible from other devices
         app.run(host="0.0.0.0", port=5000, debug=False)
     finally:
+        camera.stop()
         dht_device.exit()
 
