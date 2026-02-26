@@ -210,8 +210,16 @@
 
         .stream-controls {
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
             margin-top: 14px;
+        }
+
+        .stream-divider {
+            width: 1px;
+            background: var(--border-subtle);
+            align-self: stretch;
+            margin: 0 2px;
         }
 
         .stream-btn {
@@ -529,6 +537,13 @@
                 <a class="stream-btn" id="stream-fullscreen" href="/video_feed" target="_blank">
                     ⛶ Fullscreen
                 </a>
+                <div class="stream-divider"></div>
+                <button class="stream-btn active" id="face-toggle" onclick="toggleDetection('faces')">
+                    👤 Faces
+                </button>
+                <button class="stream-btn active" id="object-toggle" onclick="toggleDetection('objects')">
+                    🎯 Objects
+                </button>
             </div>
         </div>
 
@@ -670,6 +685,38 @@
         function takeSnapshot() {
             window.open('/snapshot?' + Date.now(), '_blank');
         }
+
+        // --- Detection toggle controls ---
+        let detectionState = { faces: true, objects: true };
+
+        async function toggleDetection(type) {
+            detectionState[type] = !detectionState[type];
+            const btn = document.getElementById(
+                type === 'faces' ? 'face-toggle' : 'object-toggle'
+            );
+            btn.classList.toggle('active', detectionState[type]);
+
+            try {
+                await fetch('/detection/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [type]: detectionState[type] }),
+                });
+            } catch (_) {}
+        }
+
+        async function syncDetectionState() {
+            try {
+                const res = await fetch('/detection/status');
+                detectionState = await res.json();
+                document.getElementById('face-toggle')
+                    .classList.toggle('active', detectionState.faces);
+                document.getElementById('object-toggle')
+                    .classList.toggle('active', detectionState.objects);
+            } catch (_) {}
+        }
+
+        syncDetectionState();
 
         // Auto-start the stream
         startStream();

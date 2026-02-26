@@ -1,5 +1,10 @@
 Flask==3.0.0
 adafruit-circuitpython-dht==4.0.4
 RPi.GPIO==0.7.1
-picamera2==0.3.22
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+
+# picamera2 must be installed via apt (not pip):
+#   sudo apt install -y python3-picamera2 python3-libcamera python3-opencv
+# If using a venv, create it with --system-site-packages
 
