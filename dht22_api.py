@@ -12,7 +12,7 @@ import threading
 import cv2
 import board
 import adafruit_dht
-from flask import Flask, jsonify, render_template, request, Response
+from flask import Flask, jsonify, request, Response, send_from_directory
 from picamera2 import Picamera2
 
 from detection import FaceDetector, ObjectDetector, draw_detections
@@ -21,7 +21,11 @@ from detection import FaceDetector, ObjectDetector, draw_detections
 # Note: board.D15 corresponds to GPIO 15 on Raspberry Pi
 dht_device = adafruit_dht.DHT22(board.D17)
 
-app = Flask(__name__)
+import os
+
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+
+app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
 
 # --- Camera streaming setup ---
 
@@ -160,8 +164,8 @@ def read_sensor():
 
 @app.route("/")
 def index():
-    """Serve the dashboard."""
-    return render_template("dashboard.html")
+    """Serve the React dashboard."""
+    return send_from_directory(FRONTEND_DIR, "index.html")
 
 
 @app.route("/api")
