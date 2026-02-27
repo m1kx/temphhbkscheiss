@@ -19,6 +19,7 @@ export default defineConfig({
       "/video_feed": "http://localhost:5000",
       "/snapshot": "http://localhost:5000",
       "/detection": "http://localhost:5000",
+      "/access-logs": "http://localhost:5000",
       "/health": "http://localhost:5000",
     },
   },

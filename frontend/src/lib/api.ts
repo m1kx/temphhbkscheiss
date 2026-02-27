@@ -17,6 +17,14 @@ export interface HealthStatus {
   timestamp: string
 }
 
+export interface AccessLogEntry {
+  id: string
+  timestamp: string
+  labels: string[]
+  count: number
+  image: string
+}
+
 export async function fetchReading(): Promise<SensorReading> {
   const res = await fetch("/reading")
   if (!res.ok) throw new Error(`Sensor error: ${res.status}`)
@@ -45,6 +53,26 @@ export async function fetchHealth(): Promise<HealthStatus> {
   const res = await fetch("/health")
   if (!res.ok) throw new Error(`Health error: ${res.status}`)
   return res.json()
+}
+
+export async function fetchAccessLogs(limit = 100): Promise<AccessLogEntry[]> {
+  const res = await fetch(`/access-logs?limit=${limit}`)
+  if (!res.ok) throw new Error(`Access logs error: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteAccessLog(id: string): Promise<void> {
+  const res = await fetch(`/access-logs/${id}`, { method: "DELETE" })
+  if (!res.ok) throw new Error(`Delete log error: ${res.status}`)
+}
+
+export async function clearAccessLogs(): Promise<void> {
+  const res = await fetch("/access-logs", { method: "DELETE" })
+  if (!res.ok) throw new Error(`Clear logs error: ${res.status}`)
+}
+
+export function accessLogImageUrl(id: string): string {
+  return `/access-logs/${id}/image`
 }
 
 export const VIDEO_FEED_URL = "/video_feed"

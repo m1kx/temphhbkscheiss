@@ -4,14 +4,17 @@ import { CameraFeed } from "@/components/camera-feed"
 import { StreamControls } from "@/components/stream-controls"
 import { SensorCard } from "@/components/sensor-card"
 import { StatusBar } from "@/components/status-bar"
+import { AccessLog } from "@/components/access-log"
 import { useSensorData } from "@/hooks/use-sensor-data"
 import { useDetectionStatus } from "@/hooks/use-detection-status"
 import { useStream } from "@/hooks/use-stream"
+import { useAccessLogs } from "@/hooks/use-access-logs"
 
 export function Dashboard() {
   const { data, error, loading, refresh } = useSensorData()
   const { status: detection, toggling, toggle } = useDetectionStatus()
   const { playing, streamUrl, toggleStream } = useStream()
+  const accessLogs = useAccessLogs()
 
   const connectionState = loading && !data
     ? "loading" as const
@@ -60,6 +63,16 @@ export function Dashboard() {
               accentClass="text-humid"
             />
           </div>
+        </div>
+
+        <div className="mt-4">
+          <AccessLog
+            logs={accessLogs.logs}
+            loading={accessLogs.loading}
+            onRefresh={accessLogs.refresh}
+            onDelete={accessLogs.remove}
+            onClearAll={accessLogs.clearAll}
+          />
         </div>
 
         <div className="mt-4">

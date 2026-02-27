@@ -6,8 +6,12 @@ Streams video from a connected Raspberry Pi camera via MJPEG with
 optional face/object detection overlays.
 """
 
+import json
+import os
 import time
+import uuid
 import threading
+from datetime import datetime
 
 import cv2
 import board
@@ -17,13 +21,13 @@ from picamera2 import Picamera2
 
 from detection import FaceDetector, ObjectDetector, draw_detections
 
-# Initialize the DHT22 sensor on GPIO pin 15
-# Note: board.D15 corresponds to GPIO 15 on Raspberry Pi
 dht_device = adafruit_dht.DHT22(board.D17)
 
-import os
-
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+SNAPSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshots")
+ACCESS_LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "access_log.json")
+
+os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
 
@@ -52,6 +56,65 @@ _latest_detections = []
 _detection_state = {"faces": True, "objects": True}
 
 _frame_lock = threading.Lock()
+
+# --- Access log for person detection ---
+
+_PERSON_LABELS = {"person", "Face"}
+_LOG_COOLDOWN_SECS = 30
+_last_person_log_time = 0.0
+_log_lock = threading.Lock()
+
+
+def _load_access_log():
+    """Load access log entries from disk."""
+    if not os.path.isfile(ACCESS_LOG_FILE):
+        return []
+    try:
+        with open(ACCESS_LOG_FILE, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_access_log(entries):
+    """Persist access log entries to disk."""
+    with open(ACCESS_LOG_FILE, "w") as f:
+        json.dump(entries, f, indent=2)
+
+
+def _record_person_event(frame_bgr, detections):
+    """Save a snapshot and append a log entry when a person is detected."""
+    global _last_person_log_time
+    now = time.time()
+    if now - _last_person_log_time < _LOG_COOLDOWN_SECS:
+        return
+    _last_person_log_time = now
+
+    person_dets = [d for d in detections if d["label"] in _PERSON_LABELS]
+    if not person_dets:
+        return
+
+    entry_id = uuid.uuid4().hex[:12]
+    filename = f"{entry_id}.jpg"
+    filepath = os.path.join(SNAPSHOTS_DIR, filename)
+
+    annotated = frame_bgr.copy()
+    draw_detections(annotated, person_dets)
+    cv2.imwrite(filepath, annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+    labels = list({d["label"] for d in person_dets})
+    entry = {
+        "id": entry_id,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "labels": labels,
+        "count": len(person_dets),
+        "image": filename,
+    }
+
+    with _log_lock:
+        log = _load_access_log()
+        log.insert(0, entry)
+        _save_access_log(log)
 
 
 def _camera_capture_loop():
@@ -99,6 +162,11 @@ def _detection_loop():
             dets.extend(object_detector.detect(frame))
 
         _latest_detections = dets
+
+        person_dets = [d for d in dets if d["label"] in _PERSON_LABELS]
+        if person_dets:
+            _record_person_event(frame, dets)
+
         time.sleep(0.05)
 
 
@@ -172,7 +240,7 @@ def index():
 def api_info():
     """API info endpoint."""
     return jsonify({
-        "name": "DHT22 Temperature API",
+        "name": "Server Room Monitor API",
         "endpoints": {
             "/": "Dashboard UI",
             "/api": "This help message",
@@ -183,6 +251,9 @@ def api_info():
             "/snapshot": "Single JPEG snapshot from Pi camera",
             "/detection/status": "Current detection toggle state",
             "/detection/toggle": "POST to toggle face/object detection",
+            "/access-logs": "GET access log entries; DELETE to clear all",
+            "/access-logs/<id>/image": "GET snapshot image for a log entry",
+            "/access-logs/<id>": "DELETE a single log entry",
             "/health": "API health check"
         }
     })
@@ -263,6 +334,55 @@ def detection_toggle():
     return jsonify(new)
 
 
+@app.route("/access-logs")
+def get_access_logs():
+    """Return access log entries, newest first. ?limit=N to cap results."""
+    with _log_lock:
+        log = _load_access_log()
+    limit = request.args.get("limit", default=100, type=int)
+    return jsonify(log[:limit])
+
+
+@app.route("/access-logs/<entry_id>/image")
+def get_access_log_image(entry_id):
+    """Serve the snapshot image for a specific log entry."""
+    filename = f"{entry_id}.jpg"
+    filepath = os.path.join(SNAPSHOTS_DIR, filename)
+    if not os.path.isfile(filepath):
+        return jsonify({"error": "Image not found"}), 404
+    return send_from_directory(SNAPSHOTS_DIR, filename, mimetype="image/jpeg")
+
+
+@app.route("/access-logs/<entry_id>", methods=["DELETE"])
+def delete_access_log(entry_id):
+    """Delete a single access log entry and its snapshot."""
+    with _log_lock:
+        log = _load_access_log()
+        entry = next((e for e in log if e["id"] == entry_id), None)
+        if entry is None:
+            return jsonify({"error": "Entry not found"}), 404
+        log = [e for e in log if e["id"] != entry_id]
+        _save_access_log(log)
+
+    filepath = os.path.join(SNAPSHOTS_DIR, f"{entry_id}.jpg")
+    if os.path.isfile(filepath):
+        os.remove(filepath)
+    return jsonify({"deleted": entry_id})
+
+
+@app.route("/access-logs", methods=["DELETE"])
+def clear_access_logs():
+    """Delete all access log entries and snapshots."""
+    with _log_lock:
+        log = _load_access_log()
+        _save_access_log([])
+    for entry in log:
+        filepath = os.path.join(SNAPSHOTS_DIR, f"{entry['id']}.jpg")
+        if os.path.isfile(filepath):
+            os.remove(filepath)
+    return jsonify({"cleared": len(log)})
+
+
 @app.route("/health")
 def health_check():
     """Health check endpoint."""
@@ -273,21 +393,26 @@ def health_check():
 
 
 if __name__ == "__main__":
-    print("Starting DHT22 Temperature API Server...")
-    print("DHT22 sensor configured on GPIO pin 15")
+    print("Starting Server Room Monitor API...")
+    print("DHT22 sensor configured on GPIO 17")
     print("Pi Camera streaming enabled (1280x720) with detection")
+    print(f"Snapshots directory: {SNAPSHOTS_DIR}")
     print("Dashboard available at http://<raspberry-pi-ip>:5000")
     print("\nEndpoints:")
-    print("  GET  /                  - Dashboard UI")
-    print("  GET  /api               - API info")
-    print("  GET  /temperature       - Temperature reading")
-    print("  GET  /humidity          - Humidity reading")
-    print("  GET  /reading           - Full sensor reading")
-    print("  GET  /video_feed        - MJPEG video livestream")
-    print("  GET  /snapshot          - Camera snapshot (JPEG)")
-    print("  GET  /detection/status  - Detection toggle state")
-    print("  POST /detection/toggle  - Toggle face/object detection")
-    print("  GET  /health            - Health check")
+    print("  GET    /                       - Dashboard UI")
+    print("  GET    /api                    - API info")
+    print("  GET    /temperature            - Temperature reading")
+    print("  GET    /humidity               - Humidity reading")
+    print("  GET    /reading                - Full sensor reading")
+    print("  GET    /video_feed             - MJPEG video livestream")
+    print("  GET    /snapshot               - Camera snapshot (JPEG)")
+    print("  GET    /detection/status       - Detection toggle state")
+    print("  POST   /detection/toggle       - Toggle face/object detection")
+    print("  GET    /access-logs            - Person detection access logs")
+    print("  GET    /access-logs/<id>/image - Snapshot for a log entry")
+    print("  DELETE /access-logs/<id>       - Delete a log entry")
+    print("  DELETE /access-logs            - Clear all log entries")
+    print("  GET    /health                 - Health check")
     print("\nPress Ctrl+C to stop the server\n")
     
     try:

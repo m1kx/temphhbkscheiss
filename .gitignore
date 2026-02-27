@@ -3,5 +3,7 @@ __pycache__/
 venv/
 .env
 models/
+snapshots/
+access_log.json
 frontend/node_modules/
 frontend/dist/
